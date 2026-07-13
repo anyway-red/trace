@@ -294,8 +294,10 @@ def trace_local_ip(ip_address):
 @app.route('/')
 def index():
     # 1. Extract client IP through ngrok or reverse proxy
-    if request.headers.getlist("X-Forwarded-For"):
-        visitor_ip = request.headers.getlist("X-Forwarded-For")[0].split(',')[0].strip()
+    if request.headers.get('X-Forwarded-For'):
+    # Render's X-Forwarded-For contains a comma-separated list of IPs. 
+    # The first one is ALWAYS the real visitor.
+        visitor_ip = request.headers.get('X-Forwarded-For').split(',')[0].strip()
     else:
         visitor_ip = request.remote_addr
 
