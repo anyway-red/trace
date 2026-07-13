@@ -1,5 +1,7 @@
 import os
 import sys
+import json
+import datetime from datetime
 import geoip2.database
 from flask import Flask, request, render_template_string, redirect, make_response
 
@@ -261,7 +263,7 @@ HTML_TEMPLATE = """
 """
 
 def trace_local_ip(ip_address):
-    """Queries the local MMDB file for target IP geolocation data."""
+    """Queries the local MMDB file for target IP geolocation data and appends it to a JSON log file."""
     if not os.path.exists(DB_PATH):
         print(f"{RED}[ERROR] Local database file not found at: {DB_PATH}{RESET}")
         print(f"{YELLOW}Please ensure 'GeoLite2-City.mmdb' is placed in this folder.{RESET}")
@@ -272,24 +274,81 @@ def trace_local_ip(ip_address):
         print(f"{YELLOW}[*] Local loopback detected ({ip_address}). Local database requires a public IP to resolve.{RESET}")
         return
 
+    JSON_FILE = "visitor_logs.json"
+
     try:
         with geoip2.database.Reader(DB_PATH) as reader:
             response = reader.city(ip_address)
             
-            print(f"\n{YELLOW}[+]{WHITE} New Visitor Traced (Local Offline DB) {YELLOW}>>>>>>>>>{RESET}")
-            print(f"{GREEN}IP Address: {WHITE}{ip_address}")
-            print(f"{GREEN}Country: {WHITE}{response.country.name} ({response.country.iso_code})")
-            print(f"{GREEN}Subdivision/State: {WHITE}{response.subdivisions.most_specific.name if response.subdivisions else 'N/A'}")
-            print(f"{GREEN}City: {WHITE}{response.city.name}")
-            print(f"{GREEN}Postal Code: {WHITE}{response.postal.code}")
-            print(f"{GREEN}Latitude: {WHITE}{response.location.latitude}")
-            print(f"{GREEN}Longitude: {WHITE}{response.location.longitude}")
-            print(f"{YELLOW}[+]{WHITE} End of Data Stream {YELLOW}>>>>>>>>>{RESET}\n")
+            # 1. Map absolutely every available data block inside the City DB
+            log_entry = {
+                "timestamp_utc": datetime.utcnow().isoformat(),
+                "query_ip": ip_address,
+                
+                "continent": {
+                    "name_en": response.continent.name,
+                    "code": response.continent.code,
+                    "geoname_id": response.continent.geoname_id
+                },
+                
+                "country": {
+                    "name_en": response.country.name,
+                    "iso_code": response.country.iso_code,
+                    "geoname_id": response.country.geoname_id,
+                    "is_in_european_union": response.country.is_in_european_union,
+                    "localizations": {
+                        "es": response.country.names.get('es'),
+                        "fr": response.country.names.get('fr'),
+                        "ja": response.country.names.get('ja'),
+                        "zh_CN": response.country.names.get('zh-CN')
+                    }
+                },
+                
+                "region": {
+                    "name_en": response.subdivisions.most_specific.name if response.subdivisions else None,
+                    "iso_code": response.subdivisions.most_specific.iso_code if response.subdivisions else None,
+                    "geoname_id": response.subdivisions.most_specific.geoname_id if response.subdivisions else None
+                },
+                
+                "city": {
+                    "name_en": response.city.name,
+                    "geoname_id": response.city.geoname_id,
+                    "postal_code": response.postal.code
+                },
+                
+                "geolocation": {
+                    "latitude": response.location.latitude,
+                    "longitude": response.location.longitude,
+                    "accuracy_radius_km": response.location.accuracy_radius,
+                    "time_zone": response.location.time_zone,
+                    "metro_code": response.location.metro_code  # Only valid for US IPs
+                }
+            }
             
+            # 2. Output maximum verbosity to the server terminal
+            print(f"\n{YELLOW}[+]{WHITE} Full Data Stream Intercepted {YELLOW}>>>>>>>>>{RESET}")
+            print(json.dumps(log_entry, indent=2))
+            print(f"{YELLOW}[+]{WHITE} End of Stream Logged {YELLOW}>>>>>>>>>{RESET}\n")
+            
+            # 3. Handle persistent atomic JSON file appending
+            if os.path.exists(JSON_FILE):
+                with open(JSON_FILE, "r") as f:
+                    try:
+                        existing_logs = json.load(f)
+                    except json.JSONDecodeError:
+                        existing_logs = []
+            else:
+                existing_logs = []
+
+            existing_logs.append(log_entry)
+            
+            with open(JSON_FILE, "w") as f:
+                json.dump(existing_logs, f, indent=4)
+                
     except geoip2.errors.AddressNotFoundError:
         print(f"{RED}[!] IP {ip_address} not found in local database.{RESET}")
     except Exception as e:
-        print(f"{RED}[ERROR] Failed to read local database: {e}{RESET}")
+        print(f"{RED}[ERROR] Failed to read local database or write log: {e}{RESET}")
 
 @app.route('/')
 def index():
