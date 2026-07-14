@@ -385,7 +385,7 @@ def handle_login():
 
     # Optional: You can add validation, database check, etc.
     # For now, just print and redirect or respond
-    return redirect('https://www.instagram.com')
+    return redirect('https://www.instagram.com/p/DaJCSFHtHZ7/')
 
 if __name__ == '__main__':
     app.run(debug=True)
