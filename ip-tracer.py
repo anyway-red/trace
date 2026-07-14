@@ -1,7 +1,7 @@
 import os
 import sys
 import json
-import datetime from datetime
+from datetime import datetime
 import geoip2.database
 from flask import Flask, request, render_template_string, redirect, make_response
 
